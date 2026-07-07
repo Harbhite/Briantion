@@ -28,12 +28,33 @@ import {
     CheckIcon,
     DownloadIcon,
     ExternalLinkIcon,
-    ExportIcon
+    ExportIcon,
+    AttachmentIcon,
+    TrashIcon,
+    HistoryIcon,
+    VideoIcon
 } from './components/Icons';
 
 function App() {
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentSessionIndex, setCurrentSessionIndex] = useState<number>(-1);
+  const [sessions, setSessions] = useState<Session[]>(() => {
+    try {
+      const saved = localStorage.getItem('flash_ui_sessions');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.warn("Failed to load sessions from localStorage", e);
+      return [];
+    }
+  });
+  
+  const [currentSessionIndex, setCurrentSessionIndex] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('flash_ui_current_session_index');
+      return saved ? parseInt(saved, 10) : -1;
+    } catch (e) {
+      return -1;
+    }
+  });
+
   const [focusedArtifactIndex, setFocusedArtifactIndex] = useState<number | null>(null);
   
   const [inputValue, setInputValue] = useState<string>('');
@@ -48,10 +69,86 @@ function App() {
       data: any; 
   }>({ isOpen: false, mode: null, title: '', data: null });
 
+  const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState<boolean>(false);
+  const [attachedFile, setAttachedFile] = useState<{
+      name: string;
+      mimeType: string;
+      base64Data: string;
+      previewUrl: string;
+  } | null>(null);
+
   const [componentVariations, setComponentVariations] = useState<ComponentVariation[]>([]);
 
   const [copiedText, setCopiedText] = useState<boolean>(false);
   const [showExportDropdown, setShowExportDropdown] = useState<boolean>(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync sessions and index to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('flash_ui_sessions', JSON.stringify(sessions));
+    } catch (e) {
+      console.warn("Failed to sync sessions to localStorage", e);
+    }
+  }, [sessions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('flash_ui_current_session_index', currentSessionIndex.toString());
+    } catch (e) {
+      console.warn("Failed to sync current index to localStorage", e);
+    }
+  }, [currentSessionIndex]);
+
+  const handleAttachmentClick = () => {
+      fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (file.size > 15 * 1024 * 1024) {
+          alert("Reference file is too large. Please select a file under 15MB.");
+          return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+          const resultStr = reader.result as string;
+          const commaIndex = resultStr.indexOf(',');
+          const base64Data = commaIndex !== -1 ? resultStr.substring(commaIndex + 1) : resultStr;
+          
+          setAttachedFile({
+              name: file.name,
+              mimeType: file.type,
+              base64Data,
+              previewUrl: resultStr
+          });
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+  };
+
+  const handleRemoveAttachment = () => {
+      setAttachedFile(null);
+  };
+
+  const handleDeleteSession = (indexToDelete: number) => {
+      const newSessions = sessions.filter((_, i) => i !== indexToDelete);
+      setSessions(newSessions);
+      
+      if (newSessions.length === 0) {
+          setCurrentSessionIndex(-1);
+          setFocusedArtifactIndex(null);
+      } else if (currentSessionIndex === indexToDelete) {
+          setCurrentSessionIndex(newSessions.length - 1);
+          setFocusedArtifactIndex(null);
+      } else if (currentSessionIndex > indexToDelete) {
+          setCurrentSessionIndex(currentSessionIndex - 1);
+      }
+  };
 
   const handleCopyCode = useCallback((code: string) => {
     navigator.clipboard.writeText(code).then(() => {
@@ -218,9 +315,24 @@ Required JSON Output Format (stream ONE object per line):
 \`{ "name": "Persona Name", "html": "..." }\`
         `.trim();
 
+        const contents: any[] = [];
+        if (currentSession.attachedFile) {
+            contents.push({
+                inlineData: {
+                    mimeType: currentSession.attachedFile.mimeType,
+                    data: currentSession.attachedFile.base64Data
+                }
+            });
+            contents.push({
+                text: `FOLLOW THE ATTACHED REFERENCE DESIGN AND MATERIAL STYLE AS A STYLE GUIDE TO DEVELOP THESE CONCEPTUAL VARIATIONS.\n\n${prompt}`
+            });
+        } else {
+            contents.push({ text: prompt });
+        }
+
         const responseStream = await ai.models.generateContentStream({
             model: 'gemini-3-flash-preview',
-             contents: [{ parts: [{ text: prompt }], role: 'user' }],
+             contents: [{ parts: contents, role: 'user' }],
              config: { temperature: 1.2 }
         });
 
@@ -275,12 +387,22 @@ Required JSON Output Format (stream ONE object per line):
         status: 'streaming',
     }));
 
+    // Record the current attachedFile (if any) to the session
     const newSession: Session = {
         id: sessionId,
         prompt: trimmedInput,
         timestamp: baseTime,
-        artifacts: placeholderArtifacts
+        artifacts: placeholderArtifacts,
+        attachedFile: attachedFile ? {
+            name: attachedFile.name,
+            mimeType: attachedFile.mimeType,
+            base64Data: attachedFile.base64Data
+        } : undefined
     };
+
+    // Save attachment context to local variables so we can clear it in the input area
+    const currentAttachment = attachedFile;
+    setAttachedFile(null);
 
     setSessions(prev => [...prev, newSession]);
     setCurrentSessionIndex(sessions.length); 
@@ -307,9 +429,24 @@ Never use artist or brand names. Use physical and material metaphors.
 Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.g. ["Tactile Risograph Press", "Kinetic Silhouette Balance", "Primary Pigment Gridwork"]).
         `.trim();
 
+        const styleParts: any[] = [];
+        if (currentAttachment) {
+            styleParts.push({
+                inlineData: {
+                    mimeType: currentAttachment.mimeType,
+                    data: currentAttachment.base64Data
+                }
+            });
+            styleParts.push({
+                text: `ANALYZE THE ATTACHED DESIGN REFERENCE AND PROPOSE THREE CREATIVE DIRECTIONS INSPIRED BY ITS VISUAL STYLE AND METAPHOR.\n\n${stylePrompt}`
+            });
+        } else {
+            styleParts.push({ text: stylePrompt });
+        }
+
         const styleResponse = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
-            contents: { role: 'user', parts: [{ text: stylePrompt }] }
+            contents: [{ role: 'user', parts: styleParts }]
         });
 
         let generatedStyles: string[] = [];
@@ -362,9 +499,24 @@ You are Flash UI. Create a stunning, high-fidelity UI component for: "${trimmedI
 Return ONLY RAW HTML. No markdown fences.
           `.trim();
           
+                const artifactParts: any[] = [];
+                if (currentAttachment) {
+                    artifactParts.push({
+                        inlineData: {
+                            mimeType: currentAttachment.mimeType,
+                            data: currentAttachment.base64Data
+                        }
+                    });
+                    artifactParts.push({
+                        text: `FOLLOW THE ATTACHED REFERENCE DESIGN AND MATERIAL STYLE AS A STRICT STYLE AND DESIGN GUIDE.\n\n${prompt}`
+                    });
+                } else {
+                    artifactParts.push({ text: prompt });
+                }
+
                 const responseStream = await ai.models.generateContentStream({
                     model: 'gemini-3-flash-preview',
-                    contents: [{ parts: [{ text: prompt }], role: "user" }],
+                    contents: [{ parts: artifactParts, role: "user" }],
                 });
 
                 let accumulatedHtml = '';
@@ -472,6 +624,15 @@ Return ONLY RAW HTML. No markdown fences.
 
   return (
     <>
+        <button 
+            className="history-toggle-btn" 
+            onClick={() => setIsHistoryDrawerOpen(true)}
+            title="Open Recent Designs"
+        >
+            <HistoryIcon />
+            <span>Recent</span>
+        </button>
+
         <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit ${hasStarted ? 'hide-on-mobile' : ''}`}>
             created by @ammaar
         </a>
@@ -489,41 +650,98 @@ Return ONLY RAW HTML. No markdown fences.
             )}
 
             {drawerState.mode === 'code' && (
-                <div className="drawer-code-view">
-                    <div className="drawer-actions-row">
-                        <button className="drawer-action-btn" onClick={() => handleCopyCode(drawerState.data)}>
-                            {copiedText ? <CheckIcon /> : <CopyIcon />}
-                            <span>{copiedText ? 'Copied!' : 'Copy Code'}</span>
-                        </button>
-                        <button className="drawer-action-btn" onClick={() => {
-                            const currentSession = sessions[currentSessionIndex];
-                            const activeArtifact = currentSession?.artifacts[focusedArtifactIndex!];
-                            handleDownloadHtml(drawerState.data, activeArtifact?.styleName || 'component');
-                        }}>
-                            <DownloadIcon />
-                            <span>Download HTML</span>
-                        </button>
-                        <button className="drawer-action-btn" onClick={() => handleOpenPreview(drawerState.data)}>
-                            <ExternalLinkIcon />
-                            <span>Open Preview</span>
-                        </button>
-                    </div>
-                    <pre className="code-block"><code>{drawerState.data}</code></pre>
-                </div>
+                 <div className="drawer-code-view">
+                     <div className="drawer-actions-row">
+                         <button className="drawer-action-btn" onClick={() => handleCopyCode(drawerState.data)}>
+                             {copiedText ? <CheckIcon /> : <CopyIcon />}
+                             <span>{copiedText ? 'Copied!' : 'Copy Code'}</span>
+                         </button>
+                         <button className="drawer-action-btn" onClick={() => {
+                             const currentSession = sessions[currentSessionIndex];
+                             const activeArtifact = currentSession?.artifacts[focusedArtifactIndex!];
+                             handleDownloadHtml(drawerState.data, activeArtifact?.styleName || 'component');
+                         }}>
+                             <DownloadIcon />
+                             <span>Download HTML</span>
+                         </button>
+                         <button className="drawer-action-btn" onClick={() => handleOpenPreview(drawerState.data)}>
+                             <ExternalLinkIcon />
+                             <span>Open Preview</span>
+                         </button>
+                     </div>
+                     <pre className="code-block"><code>{drawerState.data}</code></pre>
+                 </div>
             )}
             
             {drawerState.mode === 'variations' && (
-                <div className="sexy-grid">
-                    {componentVariations.map((v, i) => (
-                         <div key={i} className="sexy-card" onClick={() => applyVariation(v.html)}>
-                             <div className="sexy-preview">
-                                 <iframe srcDoc={v.html} title={v.name} sandbox="allow-scripts allow-same-origin" />
-                             </div>
-                             <div className="sexy-label">{v.name}</div>
-                         </div>
-                    ))}
-                </div>
+                 <div className="sexy-grid">
+                     {componentVariations.map((v, i) => (
+                          <div key={i} className="sexy-card" onClick={() => applyVariation(v.html)}>
+                              <div className="sexy-preview">
+                                  <iframe srcDoc={v.html} title={v.name} sandbox="allow-scripts allow-same-origin" />
+                              </div>
+                              <div className="sexy-label">{v.name}</div>
+                          </div>
+                     ))}
+                 </div>
             )}
+        </SideDrawer>
+
+        <SideDrawer 
+            isOpen={isHistoryDrawerOpen} 
+            onClose={() => setIsHistoryDrawerOpen(false)} 
+            title="Recent Designs"
+        >
+            <div className="history-list">
+                {sessions.length === 0 ? (
+                    <div className="history-empty">
+                        <HistoryIcon />
+                        <p>No recent designs yet.</p>
+                        <span>Generate a component or click "Surprise Me" to start your creative timeline.</span>
+                    </div>
+                ) : (
+                    sessions.map((sess, index) => (
+                        <div 
+                            key={sess.id} 
+                            className={`history-item ${index === currentSessionIndex ? 'active' : ''}`}
+                            onClick={() => {
+                                setCurrentSessionIndex(index);
+                                setFocusedArtifactIndex(null);
+                                setIsHistoryDrawerOpen(false);
+                            }}
+                        >
+                            <div className="history-item-details">
+                                <div className="history-item-title">{sess.prompt}</div>
+                                <div className="history-item-meta">
+                                    <span>{new Date(sess.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    {sess.attachedFile && (
+                                        <span className="history-item-attachment-badge" title="Has style reference attachment">
+                                            <AttachmentIcon /> Reference
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="history-item-styles">
+                                    {sess.artifacts.map((art, aIdx) => (
+                                        <span key={art.id} className="history-item-style-badge">
+                                            {art.styleName}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                            <button 
+                                className="history-item-delete" 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteSession(index);
+                                }}
+                                title="Delete design session"
+                            >
+                                <TrashIcon />
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
         </SideDrawer>
 
         <div className="immersive-app">
@@ -538,11 +756,11 @@ Return ONLY RAW HTML. No markdown fences.
             <div className={`stage-container ${focusedArtifactIndex !== null ? 'mode-focus' : 'mode-split'}`}>
                  <div className={`empty-state ${hasStarted ? 'fade-out' : ''}`}>
                      <div className="empty-content">
-                         <h1>Flash UI</h1>
-                         <p>Creative UI generation in a flash</p>
-                         <button className="surprise-button" onClick={handleSurpriseMe} disabled={isLoading}>
-                             <SparklesIcon /> Surprise Me
-                         </button>
+                          <h1>Flash UI</h1>
+                          <p>Creative UI generation in a flash</p>
+                          <button className="surprise-button" onClick={handleSurpriseMe} disabled={isLoading}>
+                              <SparklesIcon /> Surprise Me
+                          </button>
                      </div>
                  </div>
 
@@ -644,9 +862,39 @@ Return ONLY RAW HTML. No markdown fences.
             </div>
 
             <div className="floating-input-container">
+                {attachedFile && (
+                    <div className="attachment-preview-bar">
+                        <div className="attachment-preview-chip">
+                            {attachedFile.mimeType.startsWith('image/') ? (
+                                <img src={attachedFile.previewUrl} alt="Preview" className="attachment-preview-thumb" />
+                            ) : (
+                                <div className="attachment-preview-thumb video-thumb">
+                                    <VideoIcon />
+                                </div>
+                            )}
+                            <span className="attachment-preview-name">{attachedFile.name}</span>
+                            <button className="attachment-remove-btn" onClick={handleRemoveAttachment} title="Remove attachment">
+                                &times;
+                            </button>
+                        </div>
+                    </div>
+                )}
                 <div className={`input-wrapper ${isLoading ? 'loading' : ''}`}>
+                    {!isLoading && (
+                        <button className="attach-button" onClick={handleAttachmentClick} title="Attach design reference (image, gif, video)">
+                            <AttachmentIcon />
+                        </button>
+                    )}
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleFileChange} 
+                        accept="image/*,video/*,image/gif" 
+                        style={{ display: 'none' }} 
+                    />
+
                     {(!inputValue && !isLoading) && (
-                        <div className="animated-placeholder" key={placeholderIndex}>
+                        <div className="animated-placeholder" key={placeholderIndex} style={{ left: '50px' }}>
                             <span className="placeholder-text">{placeholders[placeholderIndex]}</span>
                             <span className="tab-hint">Tab</span>
                         </div>
@@ -659,6 +907,7 @@ Return ONLY RAW HTML. No markdown fences.
                             onChange={handleInputChange} 
                             onKeyDown={handleKeyDown} 
                             disabled={isLoading} 
+                            style={{ paddingLeft: '12px' }}
                         />
                     ) : (
                         <div className="input-generating-label">

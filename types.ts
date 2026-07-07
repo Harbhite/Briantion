@@ -15,6 +15,11 @@ export interface Session {
     prompt: string;
     timestamp: number;
     artifacts: Artifact[];
+    attachedFile?: {
+        name: string;
+        mimeType: string;
+        base64Data: string;
+    };
 }
 
 export interface ComponentVariation { name: string; html: string; }
