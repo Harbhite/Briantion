@@ -12,6 +12,8 @@ import ReactDOM from 'react-dom/client';
 import { Artifact, Session, ComponentVariation, LayoutOption } from './types';
 import { INITIAL_PLACEHOLDERS } from './constants';
 import { generateId } from './utils';
+import html2canvas from 'html2canvas';
+import { PROMPT_TEMPLATES } from './promptTemplates';
 
 import DottedGlowBackground from './components/DottedGlowBackground';
 import ArtifactCard from './components/ArtifactCard';
@@ -32,7 +34,10 @@ import {
     AttachmentIcon,
     TrashIcon,
     HistoryIcon,
-    VideoIcon
+    VideoIcon,
+    SettingsIcon,
+    SlidersIcon,
+    CameraIcon
 } from './components/Icons';
 
 function App() {
@@ -81,6 +86,36 @@ function App() {
 
   const [copiedText, setCopiedText] = useState<boolean>(false);
   const [showExportDropdown, setShowExportDropdown] = useState<boolean>(false);
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState<boolean>(false);
+
+  // Settings panel and custom design specifications
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [generationTemperature, setGenerationTemperature] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('flash_ui_temperature');
+      return saved ? parseFloat(saved) : 1.2;
+    } catch {
+      return 1.2;
+    }
+  });
+  const [referenceAdherence, setReferenceAdherence] = useState<string>(() => {
+    return localStorage.getItem('flash_ui_adherence') || 'high';
+  });
+  const [specTypography, setSpecTypography] = useState<string>(() => {
+    return localStorage.getItem('flash_ui_spec_typography') || '';
+  });
+  const [specColorScheme, setSpecColorScheme] = useState<string>(() => {
+    return localStorage.getItem('flash_ui_spec_color_scheme') || '';
+  });
+  const [specStructuring, setSpecStructuring] = useState<string>(() => {
+    return localStorage.getItem('flash_ui_spec_structuring') || '';
+  });
+  const [specStyle, setSpecStyle] = useState<string>(() => {
+    return localStorage.getItem('flash_ui_spec_style') || '';
+  });
+  const [specGeneral, setSpecGeneral] = useState<string>(() => {
+    return localStorage.getItem('flash_ui_spec_general') || '';
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +135,35 @@ function App() {
       console.warn("Failed to sync current index to localStorage", e);
     }
   }, [currentSessionIndex]);
+
+  // Sync settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('flash_ui_temperature', generationTemperature.toString());
+  }, [generationTemperature]);
+
+  useEffect(() => {
+    localStorage.setItem('flash_ui_adherence', referenceAdherence);
+  }, [referenceAdherence]);
+
+  useEffect(() => {
+    localStorage.setItem('flash_ui_spec_typography', specTypography);
+  }, [specTypography]);
+
+  useEffect(() => {
+    localStorage.setItem('flash_ui_spec_color_scheme', specColorScheme);
+  }, [specColorScheme]);
+
+  useEffect(() => {
+    localStorage.setItem('flash_ui_spec_structuring', specStructuring);
+  }, [specStructuring]);
+
+  useEffect(() => {
+    localStorage.setItem('flash_ui_spec_style', specStyle);
+  }, [specStyle]);
+
+  useEffect(() => {
+    localStorage.setItem('flash_ui_spec_general', specGeneral);
+  }, [specGeneral]);
 
   const handleAttachmentClick = () => {
       fileInputRef.current?.click();
@@ -180,6 +244,80 @@ function App() {
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
+  }, []);
+
+  const handleCaptureScreenshot = useCallback(async (styleName: string) => {
+    const iframe = document.querySelector('.artifact-card.focused .artifact-iframe') as HTMLIFrameElement;
+    if (!iframe) {
+        alert('Active preview iframe not found.');
+        return;
+    }
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) {
+        alert('Cannot access preview document.');
+        return;
+    }
+
+    setIsCapturingScreenshot(true);
+    try {
+        // Wait briefly for style recalculations and layout stability
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        const targetElement = iframeDoc.body || iframeDoc.documentElement;
+        
+        // Find iframe dimensions to capture everything clearly
+        const originalWidth = targetElement.scrollWidth || targetElement.clientWidth || 1024;
+        const originalHeight = targetElement.scrollHeight || targetElement.clientHeight || 768;
+
+        const canvas = await html2canvas(targetElement, {
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#121214', // sleek modern default fallback
+            logging: false,
+            scale: 2, // High resolution/retina scale
+            width: originalWidth,
+            height: originalHeight,
+            windowWidth: originalWidth,
+            windowHeight: originalHeight,
+            scrollX: 0,
+            scrollY: 0,
+            onclone: (clonedDoc) => {
+                const clonedBody = clonedDoc.body;
+                if (clonedBody) {
+                    clonedBody.style.overflow = 'hidden';
+                }
+            }
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        const cleanFilename = styleName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-|-$)/g, '') || 'screenshot';
+
+        const a = document.createElement('a');
+        a.href = imgData;
+        a.download = `flash-ui-${cleanFilename}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    } catch (err) {
+        console.error('Screenshot capture failed:', err);
+        alert('Failed to capture screenshot. You can also view it in full screen or in a new tab.');
+    } finally {
+        setIsCapturingScreenshot(false);
+    }
+  }, []);
+
+  const handleSelectTemplate = useCallback((template: typeof PROMPT_TEMPLATES[0]) => {
+      setInputValue(template.prompt);
+      setSpecTypography(template.specs.typography);
+      setSpecColorScheme(template.specs.colorScheme);
+      setSpecStructuring(template.specs.structuring);
+      setSpecStyle(template.specs.style);
+      setShowSettings(true);
+      setTimeout(() => inputRef.current?.focus(), 150);
   }, []);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -292,6 +430,16 @@ function App() {
         if (!apiKey) throw new Error("API_KEY is not configured.");
         const ai = new GoogleGenAI({ apiKey });
 
+        let specsPrompt = '';
+        if (specTypography.trim() || specColorScheme.trim() || specStructuring.trim() || specStyle.trim() || specGeneral.trim()) {
+            specsPrompt += `\n\n**USER-SPECIFIED STYLE GUIDE AND SPECIFICATIONS:**\n`;
+            if (specTypography.trim()) specsPrompt += `- **Typography & Text Guidelines**: ${specTypography.trim()}\n`;
+            if (specColorScheme.trim()) specsPrompt += `- **Color Scheme & Palette**: ${specColorScheme.trim()}\n`;
+            if (specStructuring.trim()) specsPrompt += `- **Structuring & Layout**: ${specStructuring.trim()}\n`;
+            if (specStyle.trim()) specsPrompt += `- **Visual Style & Themes**: ${specStyle.trim()}\n`;
+            if (specGeneral.trim()) specsPrompt += `- **General Notes & Behavior**: ${specGeneral.trim()}\n`;
+        }
+
         const prompt = `
 You are a master UI/UX designer. Generate 3 RADICAL CONCEPTUAL VARIATIONS of: "${currentSession.prompt}".
 
@@ -312,11 +460,20 @@ For EACH variation:
 - Generate high-fidelity HTML/CSS.
 
 Required JSON Output Format (stream ONE object per line):
-\`{ "name": "Persona Name", "html": "..." }\`
+\`{ "name": "Persona Name", "html": "..." }\`${specsPrompt}
         `.trim();
 
         const contents: any[] = [];
         if (currentSession.attachedFile) {
+            let adherenceText = '';
+            if (referenceAdherence === 'low') {
+                adherenceText = `The attached file is only a very loose, abstract inspiration. DO NOT copy its layout or text. Be as creative as possible, focusing on a new layout and style elements while maintaining only a passing spiritual resemblance.`;
+            } else if (referenceAdherence === 'medium') {
+                adherenceText = `Balance the visual cues from the attached file with original creative ideas. Adopt the color palette and basic structural metaphors but feel free to design a custom layout and add unique elements.`;
+            } else {
+                adherenceText = `Strictly analyze the attached design's layouts, typography, exact color schemes, visual components, alignment, and spacing. Treat it as a pixel-perfect design reference that must be meticulously translated into functional CSS and clean structural HTML. Replicate its visual essence with extreme precision.`;
+            }
+
             contents.push({
                 inlineData: {
                     mimeType: currentSession.attachedFile.mimeType,
@@ -324,7 +481,7 @@ Required JSON Output Format (stream ONE object per line):
                 }
             });
             contents.push({
-                text: `FOLLOW THE ATTACHED REFERENCE DESIGN AND MATERIAL STYLE AS A STYLE GUIDE TO DEVELOP THESE CONCEPTUAL VARIATIONS.\n\n${prompt}`
+                text: `STRICTNESS RULES FOR REFERENCING IMAGE:\n${adherenceText}\n\nFOLLOW THE ATTACHED REFERENCE DESIGN AND MATERIAL STYLE AS A STYLE GUIDE TO DEVELOP THESE CONCEPTUAL VARIATIONS.\n\n${prompt}`
             });
         } else {
             contents.push({ text: prompt });
@@ -333,7 +490,7 @@ Required JSON Output Format (stream ONE object per line):
         const responseStream = await ai.models.generateContentStream({
             model: 'gemini-3-flash-preview',
              contents: [{ parts: contents, role: 'user' }],
-             config: { temperature: 1.2 }
+             config: { temperature: generationTemperature }
         });
 
         for await (const variation of parseJsonStream(responseStream)) {
@@ -346,7 +503,7 @@ Required JSON Output Format (stream ONE object per line):
     } finally {
         setIsLoading(false);
     }
-  }, [sessions, currentSessionIndex, focusedArtifactIndex]);
+  }, [sessions, currentSessionIndex, focusedArtifactIndex, generationTemperature, referenceAdherence, specTypography, specColorScheme, specStructuring, specStyle, specGeneral]);
 
   const applyVariation = (html: string) => {
       if (focusedArtifactIndex === null) return;
@@ -413,6 +570,27 @@ Required JSON Output Format (stream ONE object per line):
         if (!apiKey) throw new Error("API_KEY is not configured.");
         const ai = new GoogleGenAI({ apiKey });
 
+        let specsPrompt = '';
+        if (specTypography.trim() || specColorScheme.trim() || specStructuring.trim() || specStyle.trim() || specGeneral.trim()) {
+            specsPrompt += `\n\n**USER-SPECIFIED STYLE GUIDE AND SPECIFICATIONS:**\n`;
+            if (specTypography.trim()) specsPrompt += `- **Typography & Text Guidelines**: ${specTypography.trim()}\n`;
+            if (specColorScheme.trim()) specsPrompt += `- **Color Scheme & Palette**: ${specColorScheme.trim()}\n`;
+            if (specStructuring.trim()) specsPrompt += `- **Structuring & Layout**: ${specStructuring.trim()}\n`;
+            if (specStyle.trim()) specsPrompt += `- **Visual Style & Themes**: ${specStyle.trim()}\n`;
+            if (specGeneral.trim()) specsPrompt += `- **General Notes & Behavior**: ${specGeneral.trim()}\n`;
+        }
+
+        let adherenceText = '';
+        if (currentAttachment) {
+            if (referenceAdherence === 'low') {
+                adherenceText = `The attached file is only a very loose, abstract inspiration. DO NOT copy its layout or text. Be as creative as possible, focusing on a new layout and style elements while maintaining only a passing spiritual resemblance.`;
+            } else if (referenceAdherence === 'medium') {
+                adherenceText = `Balance the visual cues from the attached file with original creative ideas. Adopt the color palette and basic structural metaphors but feel free to design a custom layout and add unique elements.`;
+            } else {
+                adherenceText = `Strictly analyze the attached design's layouts, typography, exact color schemes, visual components, alignment, and spacing. Treat it as a pixel-perfect design reference that must be meticulously translated into functional CSS and clean structural HTML. Replicate its visual essence with extreme precision.`;
+            }
+        }
+
         const stylePrompt = `
 Generate 3 distinct, highly evocative design directions for: "${trimmedInput}".
 
@@ -426,7 +604,7 @@ Never use artist or brand names. Use physical and material metaphors.
 - Example D: "Spectral Prismatic Diffusion" (Glassmorphism, caustic refraction, soft-focus morphing gradients).
 
 **GOAL:**
-Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.g. ["Tactile Risograph Press", "Kinetic Silhouette Balance", "Primary Pigment Gridwork"]).
+Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.g. ["Tactile Risograph Press", "Kinetic Silhouette Balance", "Primary Pigment Gridwork"]).${specsPrompt}
         `.trim();
 
         const styleParts: any[] = [];
@@ -438,7 +616,7 @@ Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.
                 }
             });
             styleParts.push({
-                text: `ANALYZE THE ATTACHED DESIGN REFERENCE AND PROPOSE THREE CREATIVE DIRECTIONS INSPIRED BY ITS VISUAL STYLE AND METAPHOR.\n\n${stylePrompt}`
+                text: `STRICTNESS RULES FOR REFERENCING IMAGE:\n${adherenceText}\n\nANALYZE THE ATTACHED DESIGN REFERENCE AND PROPOSE THREE CREATIVE DIRECTIONS INSPIRED BY ITS VISUAL STYLE AND METAPHOR.\n\n${stylePrompt}`
             });
         } else {
             styleParts.push({ text: stylePrompt });
@@ -446,7 +624,8 @@ Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.
 
         const styleResponse = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
-            contents: [{ role: 'user', parts: styleParts }]
+            contents: [{ role: 'user', parts: styleParts }],
+            config: { temperature: generationTemperature }
         });
 
         let generatedStyles: string[] = [];
@@ -496,7 +675,7 @@ You are Flash UI. Create a stunning, high-fidelity UI component for: "${trimmedI
 4. **IP SAFEGUARD**: No artist names or trademarks. 
 5. **Layout**: Be bold with negative space and hierarchy. Avoid generic cards.
 
-Return ONLY RAW HTML. No markdown fences.
+Return ONLY RAW HTML. No markdown fences.${specsPrompt}
           `.trim();
           
                 const artifactParts: any[] = [];
@@ -508,7 +687,7 @@ Return ONLY RAW HTML. No markdown fences.
                         }
                     });
                     artifactParts.push({
-                        text: `FOLLOW THE ATTACHED REFERENCE DESIGN AND MATERIAL STYLE AS A STRICT STYLE AND DESIGN GUIDE.\n\n${prompt}`
+                        text: `STRICTNESS RULES FOR REFERENCING IMAGE:\n${adherenceText}\n\nFOLLOW THE ATTACHED REFERENCE DESIGN AND MATERIAL STYLE AS A STRICT STYLE AND DESIGN GUIDE.\n\n${prompt}`
                     });
                 } else {
                     artifactParts.push({ text: prompt });
@@ -517,6 +696,7 @@ Return ONLY RAW HTML. No markdown fences.
                 const responseStream = await ai.models.generateContentStream({
                     model: 'gemini-3-flash-preview',
                     contents: [{ parts: artifactParts, role: "user" }],
+                    config: { temperature: generationTemperature }
                 });
 
                 let accumulatedHtml = '';
@@ -570,7 +750,7 @@ Return ONLY RAW HTML. No markdown fences.
         setIsLoading(false);
         setTimeout(() => inputRef.current?.focus(), 100);
     }
-  }, [inputValue, isLoading, sessions.length]);
+  }, [inputValue, isLoading, sessions.length, attachedFile, generationTemperature, referenceAdherence, specTypography, specColorScheme, specStructuring, specStyle, specGeneral]);
 
   const handleSurpriseMe = () => {
       const currentPrompt = placeholders[placeholderIndex];
@@ -761,6 +941,32 @@ Return ONLY RAW HTML. No markdown fences.
                           <button className="surprise-button" onClick={handleSurpriseMe} disabled={isLoading}>
                               <SparklesIcon /> Surprise Me
                           </button>
+
+                          <div className="templates-section">
+                              <div className="templates-divider">
+                                  <span>OR CHOOSE A DESIGN TEMPLATE</span>
+                              </div>
+                              <div className="templates-grid">
+                                  {PROMPT_TEMPLATES.map((template) => (
+                                      <div 
+                                          key={template.id} 
+                                          className="template-card"
+                                          onClick={() => handleSelectTemplate(template)}
+                                          title={`Click to load ${template.name} prompt & custom design specs`}
+                                      >
+                                          <div className="template-card-header">
+                                              <span className="template-card-icon">{template.icon}</span>
+                                              <span className="template-card-name">{template.name}</span>
+                                          </div>
+                                          <p className="template-card-prompt">{template.prompt}</p>
+                                          <div className="template-card-meta">
+                                              <span className="template-card-tag">{template.category}</span>
+                                              <span className="template-card-action">Load Specs →</span>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
                      </div>
                  </div>
 
@@ -854,6 +1060,20 @@ Return ONLY RAW HTML. No markdown fences.
                                         <ExternalLinkIcon />
                                         <span>Open Preview</span>
                                     </button>
+                                    <button onClick={() => {
+                                        const activeArtifact = currentSession?.artifacts[focusedArtifactIndex!];
+                                        if (activeArtifact) {
+                                            handleCaptureScreenshot(activeArtifact.styleName);
+                                            setShowExportDropdown(false);
+                                        }
+                                    }} disabled={isCapturingScreenshot}>
+                                        {isCapturingScreenshot ? (
+                                            <span className="animate-spin mr-1">⌛</span>
+                                        ) : (
+                                            <CameraIcon />
+                                        )}
+                                        <span>{isCapturingScreenshot ? 'Capturing...' : 'Download Screenshot'}</span>
+                                    </button>
                                 </div>
                             </>
                         )}
@@ -862,6 +1082,133 @@ Return ONLY RAW HTML. No markdown fences.
             </div>
 
             <div className="floating-input-container">
+                {showSettings && (
+                    <div className="settings-panel">
+                        <div className="settings-panel-header">
+                            <div className="settings-panel-title">
+                                <SlidersIcon />
+                                <span>Design Specs & Controls</span>
+                            </div>
+                            <button className="settings-panel-close" onClick={() => setShowSettings(false)} title="Close settings">
+                                &times;
+                            </button>
+                        </div>
+                        <div className="settings-panel-grid">
+                            <div className="settings-field">
+                                <div className="field-label-row">
+                                    <label>Temperature (Creativity)</label>
+                                    <span className="settings-val-highlight">{generationTemperature.toFixed(1)}</span>
+                                </div>
+                                <input 
+                                    type="range" 
+                                    min="0.1" 
+                                    max="2.0" 
+                                    step="0.1" 
+                                    value={generationTemperature} 
+                                    onChange={(e) => setGenerationTemperature(parseFloat(e.target.value))} 
+                                    className="settings-slider"
+                                />
+                                <div className="settings-slider-labels">
+                                    <span>Focused</span>
+                                    <span>Balanced</span>
+                                    <span>Creative</span>
+                                </div>
+                            </div>
+
+                            <div className="settings-field">
+                                <div className="field-label-row">
+                                    <label>Reference Adherence</label>
+                                    <span className="settings-val-highlight capitalize">{referenceAdherence}</span>
+                                </div>
+                                <div className="adherence-tabs">
+                                    {['low', 'medium', 'high'].map(level => (
+                                        <button 
+                                            key={level}
+                                            type="button"
+                                            className={`adherence-tab ${referenceAdherence === level ? 'active' : ''}`}
+                                            onClick={() => setReferenceAdherence(level)}
+                                        >
+                                            {level === 'low' ? 'Loose' : level === 'medium' ? 'Medium' : 'Strict'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="settings-field">
+                                <label>Text & Typography</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="e.g. Space Grotesk bold, JetBrains Mono"
+                                    value={specTypography}
+                                    onChange={(e) => setSpecTypography(e.target.value)}
+                                    className="settings-input"
+                                />
+                            </div>
+
+                            <div className="settings-field">
+                                <label>Color Scheme</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="e.g. Deep charcoal dark, hot orange accents"
+                                    value={specColorScheme}
+                                    onChange={(e) => setSpecColorScheme(e.target.value)}
+                                    className="settings-input"
+                                />
+                            </div>
+
+                            <div className="settings-field">
+                                <label>Structuring & Layout</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="e.g. Compact 3-column dashboard grid"
+                                    value={specStructuring}
+                                    onChange={(e) => setSpecStructuring(e.target.value)}
+                                    className="settings-input"
+                                />
+                            </div>
+
+                            <div className="settings-field">
+                                <label>Style Theme / Vibe</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="e.g. Minimal glassmorphism, flat brutalism"
+                                    value={specStyle}
+                                    onChange={(e) => setSpecStyle(e.target.value)}
+                                    className="settings-input"
+                                />
+                            </div>
+
+                            <div className="settings-field full-width">
+                                <label>General Custom Specifications</label>
+                                <textarea 
+                                    placeholder="Add any extra prompt requirements, functional behaviors, animations, or elements here..."
+                                    value={specGeneral}
+                                    onChange={(e) => setSpecGeneral(e.target.value)}
+                                    className="settings-textarea"
+                                    rows={2}
+                                />
+                            </div>
+                        </div>
+                        <div className="settings-panel-actions">
+                            <button 
+                                type="button" 
+                                className="settings-reset-btn" 
+                                onClick={() => {
+                                    setGenerationTemperature(1.2);
+                                    setReferenceAdherence('high');
+                                    setSpecTypography('');
+                                    setSpecColorScheme('');
+                                    setSpecStructuring('');
+                                    setSpecStyle('');
+                                    setSpecGeneral('');
+                                }}
+                            >
+                                Reset to Default
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {attachedFile && (
                     <div className="attachment-preview-bar">
                         <div className="attachment-preview-chip">
@@ -881,9 +1228,14 @@ Return ONLY RAW HTML. No markdown fences.
                 )}
                 <div className={`input-wrapper ${isLoading ? 'loading' : ''}`}>
                     {!isLoading && (
-                        <button className="attach-button" onClick={handleAttachmentClick} title="Attach design reference (image, gif, video)">
-                            <AttachmentIcon />
-                        </button>
+                        <div className="input-action-buttons">
+                            <button className="attach-button" onClick={handleAttachmentClick} title="Attach design reference (image, gif, video)">
+                                <AttachmentIcon />
+                            </button>
+                            <button className={`settings-button ${showSettings ? 'active' : ''}`} onClick={() => setShowSettings(!showSettings)} title="Customize Design Specs & Generation Settings">
+                                <SettingsIcon />
+                            </button>
+                        </div>
                     )}
                     <input 
                         type="file" 
@@ -894,7 +1246,7 @@ Return ONLY RAW HTML. No markdown fences.
                     />
 
                     {(!inputValue && !isLoading) && (
-                        <div className="animated-placeholder" key={placeholderIndex} style={{ left: '50px' }}>
+                        <div className="animated-placeholder" key={placeholderIndex} style={{ left: '110px' }}>
                             <span className="placeholder-text">{placeholders[placeholderIndex]}</span>
                             <span className="tab-hint">Tab</span>
                         </div>
