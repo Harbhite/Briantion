@@ -350,11 +350,11 @@ function App() {
   useEffect(() => {
       const fetchDynamicPlaceholders = async () => {
           try {
-              const apiKey = process.env.API_KEY;
+              const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
               if (!apiKey) return;
               const ai = new GoogleGenAI({ apiKey });
               const response = await ai.models.generateContent({
-                  model: 'gemini-3-flash-preview',
+                  model: 'gemini-2.5-flash',
                   contents: { 
                       role: 'user', 
                       parts: [{ 
@@ -427,7 +427,7 @@ function App() {
     setDrawerState({ isOpen: true, mode: 'variations', title: 'Variations', data: currentArtifact.id });
 
     try {
-        const apiKey = process.env.API_KEY;
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
         if (!apiKey) throw new Error("API_KEY is not configured.");
         const ai = new GoogleGenAI({ apiKey });
 
@@ -489,7 +489,7 @@ Required JSON Output Format (stream ONE object per line):
         }
 
         const responseStream = await ai.models.generateContentStream({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-2.5-flash',
              contents: [{ parts: contents, role: 'user' }],
              config: { temperature: generationTemperature }
         });
@@ -567,7 +567,7 @@ Required JSON Output Format (stream ONE object per line):
     setFocusedArtifactIndex(null); 
 
     try {
-        const apiKey = process.env.API_KEY;
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
         if (!apiKey) throw new Error("API_KEY is not configured.");
         const ai = new GoogleGenAI({ apiKey });
 
@@ -624,7 +624,7 @@ Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.
         }
 
         const styleResponse = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: styleParts }],
             config: { temperature: generationTemperature }
         });
@@ -695,7 +695,7 @@ Return ONLY RAW HTML. No markdown fences.${specsPrompt}
                 }
 
                 const responseStream = await ai.models.generateContentStream({
-                    model: 'gemini-3-flash-preview',
+                    model: 'gemini-2.5-flash',
                     contents: [{ parts: artifactParts, role: "user" }],
                     config: { temperature: generationTemperature }
                 });
