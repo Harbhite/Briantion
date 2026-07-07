@@ -10,12 +10,14 @@ interface ArtifactCardProps {
     artifact: Artifact;
     isFocused: boolean;
     onClick: () => void;
+    onClose?: (e: React.MouseEvent) => void;
 }
 
 const ArtifactCard = React.memo(({ 
     artifact, 
     isFocused, 
-    onClick 
+    onClick,
+    onClose
 }: ArtifactCardProps) => {
     const codeRef = useRef<HTMLPreElement>(null);
 
@@ -51,6 +53,15 @@ const ArtifactCard = React.memo(({
                     className="artifact-iframe"
                 />
             </div>
+            {isFocused && onClose && (
+                <button 
+                    className="focused-card-close-btn" 
+                    onClick={onClose} 
+                    title="Back to Grid View"
+                >
+                    &times;
+                </button>
+            )}
         </div>
     );
 });

@@ -629,17 +629,35 @@ html, body {
         flex-shrink: 0;
     }
 
+    /* Make empty-state scrollable so template cards are accessible on small screens */
+    .empty-state {
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        overflow-y: auto !important;
+        padding-top: 60px !important;
+        padding-bottom: 140px !important;
+    }
+
+    .empty-content {
+        margin-top: auto;
+        margin-bottom: auto;
+    }
+
     .empty-content h1 {
         font-size: 3.5rem;
     }
 
-    /* Adjust focused state for mobile to avoid cutoffs and center more cleanly */
+    /* Adjust focused state for mobile to avoid cutoffs and fit perfectly without overlap */
     .stage-container.mode-focus .artifact-card.focused {
-        width: 92vw;
-        height: 65vh; 
-        top: 40%;
+        width: calc(100% - 24px);
+        max-width: 600px;
+        height: calc(100vh - 200px); 
+        top: 16px;
         left: 50%;
-        transform: translate(-50%, -40%) !important; /* Force centering despite any parent shifts */
+        transform: translateX(-50%) !important;
+        z-index: 100;
+        border-radius: 12px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
     }
 
     .action-bar {
@@ -1467,5 +1485,188 @@ html, body {
     .templates-section {
         margin-top: 24px;
         padding: 0 16px;
+    }
+}
+
+/* === Floating Reference Button & Lightbox Modal === */
+.floating-reference-badge-btn {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    z-index: 95;
+    background: rgba(20, 20, 22, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 0.825rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.floating-reference-badge-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.focused-card-close-btn {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(15, 15, 17, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+    font-size: 1.35rem;
+    font-weight: 300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 105;
+    transition: all 0.2s ease;
+    line-height: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.focused-card-close-btn:hover {
+    background: var(--text-primary);
+    color: #000;
+    border-color: var(--text-primary);
+    transform: scale(1.08) rotate(90deg);
+}
+
+.reference-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 5, 6, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    animation: fadeInModal 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInModal {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.reference-modal-content {
+    background: rgba(20, 20, 22, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 680px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.8), 0 0 40px rgba(255,255,255,0.02);
+    animation: scaleInModal 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes scaleInModal {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.reference-modal-header {
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.reference-modal-header h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+}
+
+.reference-modal-close {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.15s ease;
+    padding: 0;
+}
+
+.reference-modal-close:hover {
+    color: var(--text-primary);
+}
+
+.reference-modal-body {
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: 60vh;
+    background: #0d0d0e;
+    overflow: hidden;
+}
+
+.reference-modal-body img,
+.reference-modal-body video {
+    max-width: 100%;
+    max-height: 55vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.reference-modal-footer {
+    padding: 14px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(15, 15, 17, 0.5);
+    display: flex;
+    justify-content: center;
+}
+
+.reference-modal-footer span {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-family: 'Roboto Mono', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+@media (max-width: 640px) {
+    .floating-reference-badge-btn {
+        top: 14px;
+        right: 14px;
+        padding: 6px 12px;
+        font-size: 0.75rem;
+    }
+    
+    .reference-modal-content {
+        max-width: 100%;
+        border-radius: 12px;
+    }
+    
+    .reference-modal-body {
+        max-height: 50vh;
     }
 }

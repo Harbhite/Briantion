@@ -90,6 +90,7 @@ function App() {
 
   // Settings panel and custom design specifications
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [showReferenceModal, setShowReferenceModal] = useState<boolean>(false);
   const [generationTemperature, setGenerationTemperature] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('flash_ui_temperature');
@@ -968,9 +969,7 @@ Return ONLY RAW HTML. No markdown fences.${specsPrompt}
                               </div>
                           </div>
                      </div>
-                 </div>
-
-                {sessions.map((session, sIndex) => {
+                 </div>                 {sessions.map((session, sIndex) => {
                     let positionClass = 'hidden';
                     if (sIndex === currentSessionIndex) positionClass = 'active-session';
                     else if (sIndex < currentSessionIndex) positionClass = 'past-session';
@@ -988,10 +987,24 @@ Return ONLY RAW HTML. No markdown fences.${specsPrompt}
                                             artifact={artifact}
                                             isFocused={isFocused}
                                             onClick={() => setFocusedArtifactIndex(aIndex)}
+                                            onClose={(e) => {
+                                                e.stopPropagation();
+                                                setFocusedArtifactIndex(null);
+                                            }}
                                         />
                                     );
                                 })}
                             </div>
+                            {session.attachedFile && (
+                                <button 
+                                    className="floating-reference-badge-btn"
+                                    onClick={() => setShowReferenceModal(true)}
+                                    title="Click to view attached design reference"
+                                >
+                                    <AttachmentIcon />
+                                    <span>View Reference</span>
+                                </button>
+                            )}
                         </div>
                     );
                 })}
@@ -1022,6 +1035,11 @@ Return ONLY RAW HTML. No markdown fences.${specsPrompt}
                     <button onClick={handleShowCode}>
                         <CodeIcon /> Source
                     </button>
+                    {currentSession?.attachedFile && (
+                        <button onClick={() => setShowReferenceModal(true)} title="View uploaded design reference">
+                            <AttachmentIcon /> Reference
+                        </button>
+                    )}
                     <div className="export-dropdown-wrapper">
                         <button onClick={() => setShowExportDropdown(!showExportDropdown)}>
                             <ExportIcon /> Export
@@ -1272,6 +1290,27 @@ Return ONLY RAW HTML. No markdown fences.${specsPrompt}
                     </button>
                 </div>
             </div>
+
+            {showReferenceModal && currentSession?.attachedFile && (
+                <div className="reference-modal-overlay" onClick={() => setShowReferenceModal(false)}>
+                    <div className="reference-modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="reference-modal-header">
+                            <h3>Design Reference</h3>
+                            <button className="reference-modal-close" onClick={() => setShowReferenceModal(false)}>&times;</button>
+                        </div>
+                        <div className="reference-modal-body">
+                            {currentSession.attachedFile.mimeType.startsWith('image/') ? (
+                                <img src={`data:${currentSession.attachedFile.mimeType};base64,${currentSession.attachedFile.base64Data}`} alt="Reference" />
+                            ) : (
+                                <video src={`data:${currentSession.attachedFile.mimeType};base64,${currentSession.attachedFile.base64Data}`} controls />
+                            )}
+                        </div>
+                        <div className="reference-modal-footer">
+                            <span>{currentSession.attachedFile.name}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     </>
   );
